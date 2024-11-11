@@ -1,3 +1,7 @@
+/*Disclaimer: I've consulted ChatGPT while making this handin, but
+I've suddenly become unsure whether this is totally banned in this course.
+Thought it best to add a disclaimer either way.*/
+
 package main
 
 import (
