@@ -1,129 +1,117 @@
 package main
 
 import (
-	"bufio"
 	"context"
-	"flag"
 	"log"
-	"math/rand"
 	"net"
-	"os"
+	"sync"
 	"time"
 
-	pb "handin4/gRPC/handin4"
+	pb "handin4/gRPC/handin4/handin4/gRPC/handin4"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-var ListOfAllNodes [3]*pb.Node
+var ListOfAllNodes []Node
 var HighestSequenceNumber int64 = 0
+var mu sync.Mutex
 
 type Server struct {
 	pb.UnimplementedMutualExclusionServer
 }
 
-func main() {
-	addr := ":50052"
-
-	go ServerSide(addr)
-
-	reader := bufio.NewReader(os.Stdin)
-	peerAddr, _ := reader.ReadString('\n')
-	peerAddr = peerAddr[:len(peerAddr)-1] // Remove newline character
-
-	log.Println("Enter 'request' to request access to Critical Section")
-	input, _ := reader.ReadString('\n')
-	input = input[:len(input)-1] // Remove newline character
-
-	//above 6 lines by help of chatgpt
-
-	ClientSide(addr, input)
+type Node struct {
+	pb.UnimplementedMutualExclusionServer
+	NodeID     int
+	Addr       string
+	nextNode   string
+	client     pb.MutualExclusionClient
+	server     *grpc.Server
+	listenAddr string
+	SequenceNo int
 }
 
-func ClientSide(addr string, input string) {
-	addrconn := flag.String("addr", "localhost:50052", "the address to connect to")
-	flag.Parse()
-	conn, err := grpc.NewClient(*addrconn, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func (node *Node) RequestAccess(ctx context.Context, req *pb.Requester) (*pb.Reply, error) {
+	if node.SequenceNo > int(HighestSequenceNumber) || (HighestSequenceNumber == int64(node.SequenceNo)) {
+		log.Printf("Node %v has NOT gotten the token and NOT gained access to the Critical Section", node.NodeID)
+		return &pb.Reply{NodeID: int64(node.NodeID)}, nil
+	} else {
+		mu.Lock()
+		log.Printf("Node %v has gotten the token and gained access to the Critical Section", node.NodeID)
+
+		time.Sleep(10000)
+
+		log.Printf("Node %v has left the Critical Section, and is passing the token", node.NodeID)
+		mu.Unlock()
+	}
+	return &pb.Reply{NodeID: int64(node.NodeID)}, nil
+}
+
+func main() {
+	nodeaddr := []string{
+		"localhost:50051", // Node 1
+		"localhost:50052", // Node 2
+		"localhost:50053", // Node 3
+	}
+
+	var ListOfAllNodes []Node
+	for i := 0; i < len(nodeaddr); i++ {
+		nextNode := nodeaddr[(i+1)%len(nodeaddr)] // The next node in the ring
+		ListOfAllNodes = append(ListOfAllNodes, Node{
+			NodeID:     i,
+			Addr:       nodeaddr[i],
+			nextNode:   nextNode,
+			listenAddr: nodeaddr[i],
+		})
+	}
+
+	for _, node := range ListOfAllNodes {
+		go node.ServerSide()
+		go node.ClientSide()
+
+	}
+	for {
+		for _, node := range ListOfAllNodes {
+			go node.NextNode()
+		}
+	}
+}
+
+func (node *Node) ClientSide() {
+	conn, err := grpc.NewClient(node.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
 	defer conn.Close()
-	c := pb.NewMutualExclusionClient(conn)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-
-	for i := 0; i < 3; i++ {
-		thisNode := &pb.Node{
-			NodeID:          int64(i),
-			SeqeuenceNumber: HighestSequenceNumber,
-			Acceptance:      0,
-		}
-		ListOfAllNodes[i] = thisNode
-	}
-
-	if input == "request" {
-		for i, node := range ListOfAllNodes { //figure out a breakpoint?
-			RequesterNode := ListOfAllNodes[rand.Intn(len(ListOfAllNodes))]
-			//RequesterNode := ListOfAllNodes[RequesterNodeIndex]
-			RequesterNode.SeqeuenceNumber = HighestSequenceNumber + 1
-			log.Println("Requesting: ", RequesterNode.NodeID, " is requesting access to the Critical Section")
-			HighestSequenceNumber = max(HighestSequenceNumber, RequesterNode.SeqeuenceNumber)
-			//check placement of above statement
-
-			PairofNodes := &pb.PairofNodes{
-				Node1: RequesterNode,
-				Node2: node,
-			}
-			req, err := c.RequestAccess(ctx, PairofNodes)
-			if err != nil {
-				log.Printf("Failure: %v Could not request access", RequesterNode)
-			}
-			log.Printf("%v has answered for request: %v", node, req.GetAcceptance())
-			if RequesterNode.Acceptance == 2 {
-				log.Printf("%v has entered the Critical Section and I is %v ", node.NodeID, i)
-			}
-			RequesterNode.Acceptance = 0
-		}
-	}
-	defer cancel()
-
+	//node.client = pb.NewMutualExclusionClient(conn)
 }
-func ServerSide(addr string) {
-	listener, err := net.Listen("tcp", ":50052")
+
+func (node *Node) ServerSide() {
+	listener, err := net.Listen("tcp", node.listenAddr)
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	} else {
-		log.Printf("Now listening on: 50052")
+		log.Printf("Node %v now listening on: %s", node.NodeID, node.listenAddr)
 	}
+	node.server = grpc.NewServer()
+	//server := Server{}
+	pb.RegisterMutualExclusionServer(node.server, node)
 
-	grpcServer := grpc.NewServer()
-	server := &Server{}
-	pb.RegisterMutualExclusionServer(grpcServer, server)
-
-	log.Println("Node is running on : 50052...")
-	if err := grpcServer.Serve(listener); err != nil {
+	log.Printf("Node %v is running on : %s ...", node.NodeID, node.Addr)
+	if err := node.server.Serve(listener); err != nil {
 		log.Fatalf("Failed to serve: %v", err)
 	}
-
 }
 
-func (s *Server) RequestAccess(ctx context.Context, PairofNodes *pb.PairofNodes) (*pb.Reply, error) {
-	Node1 := PairofNodes.Node1
-	NodeID1 := PairofNodes.Node1.NodeID
-	//Node2 := PairofNodes.Node2
-	NodeID2 := PairofNodes.Node2.NodeID
-
-	if HighestSequenceNumber > Node1.SeqeuenceNumber || (HighestSequenceNumber == Node1.SeqeuenceNumber && NodeID1 > NodeID2) {
-		log.Println("Denied: ", NodeID1, " cannot acccess the Critical Section and will now wait")
-		Reply := &pb.Reply{
-			Acceptance: false,
-		}
-		return Reply, nil
-	} else {
-		Node1.Acceptance++
-		Reply := &pb.Reply{
-			Acceptance: true,
-		}
-		return Reply, nil
+func (node Node) NextNode() {
+	conn, err := grpc.NewClient(node.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Fatalf("did not connect: %v", err)
 	}
+	defer conn.Close()
+	client := pb.NewMutualExclusionClient(conn)
+	node.SequenceNo = int(HighestSequenceNumber) + 1
+	HighestSequenceNumber = int64(node.SequenceNo)
+	client.RequestAccess(context.Background(), &pb.Requester{NodeID: int64(node.NodeID)})
 }

@@ -19,7 +19,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type MutualExclusionClient interface {
 	//Node requests access to Critical Section
-	RequestAccess(ctx context.Context, in *PairofNodes, opts ...grpc.CallOption) (*Reply, error)
+	RequestAccess(ctx context.Context, in *Requester, opts ...grpc.CallOption) (*Reply, error)
 }
 
 type mutualExclusionClient struct {
@@ -30,7 +30,7 @@ func NewMutualExclusionClient(cc grpc.ClientConnInterface) MutualExclusionClient
 	return &mutualExclusionClient{cc}
 }
 
-func (c *mutualExclusionClient) RequestAccess(ctx context.Context, in *PairofNodes, opts ...grpc.CallOption) (*Reply, error) {
+func (c *mutualExclusionClient) RequestAccess(ctx context.Context, in *Requester, opts ...grpc.CallOption) (*Reply, error) {
 	out := new(Reply)
 	err := c.cc.Invoke(ctx, "/gRPC.MutualExclusion/RequestAccess", in, out, opts...)
 	if err != nil {
@@ -44,7 +44,7 @@ func (c *mutualExclusionClient) RequestAccess(ctx context.Context, in *PairofNod
 // for forward compatibility
 type MutualExclusionServer interface {
 	//Node requests access to Critical Section
-	RequestAccess(context.Context, *PairofNodes) (*Reply, error)
+	RequestAccess(context.Context, *Requester) (*Reply, error)
 	mustEmbedUnimplementedMutualExclusionServer()
 }
 
@@ -52,7 +52,7 @@ type MutualExclusionServer interface {
 type UnimplementedMutualExclusionServer struct {
 }
 
-func (UnimplementedMutualExclusionServer) RequestAccess(context.Context, *PairofNodes) (*Reply, error) {
+func (UnimplementedMutualExclusionServer) RequestAccess(context.Context, *Requester) (*Reply, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RequestAccess not implemented")
 }
 func (UnimplementedMutualExclusionServer) mustEmbedUnimplementedMutualExclusionServer() {}
@@ -69,7 +69,7 @@ func RegisterMutualExclusionServer(s grpc.ServiceRegistrar, srv MutualExclusionS
 }
 
 func _MutualExclusion_RequestAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PairofNodes)
+	in := new(Requester)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func _MutualExclusion_RequestAccess_Handler(srv interface{}, ctx context.Context
 		FullMethod: "/gRPC.MutualExclusion/RequestAccess",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MutualExclusionServer).RequestAccess(ctx, req.(*PairofNodes))
+		return srv.(MutualExclusionServer).RequestAccess(ctx, req.(*Requester))
 	}
 	return interceptor(ctx, in, info, handler)
 }
