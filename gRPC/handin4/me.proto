@@ -2,22 +2,20 @@ syntax = "proto3";
 
 package gRPC;
 
-option go_package = "handin4/gRPC";
+option go_package = "handin4/gRPC/handin4";
 
 service MutualExclusion {
   //Node requests access to Critical Section
-  rpc RequestAccess(Replier) returns (stream Reply);
-}
-
-message Replier {
-  Node RequesterNode = 1;
-  int64 SequenceNumber = 2;
-  int64 timestamp = 3;
+  rpc RequestAccess(PairofNodes) returns (Reply);
 }
 
 message Reply {
-  int64 NodeID = 1;
-  bool Accepted = 2;
+  bool Acceptance = 1;
+}
+
+message PairofNodes {
+  Node Node1 = 1;
+  Node Node2 = 2;
   //if Accepted = True, this means message will be defered
   //List<Node> Recipients = 3;
 }
@@ -25,4 +23,5 @@ message Reply {
 message Node {
     int64 NodeID = 1;
     int64 SeqeuenceNumber = 2;
+    int64 Acceptance = 3;
 }
